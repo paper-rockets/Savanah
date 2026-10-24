@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Animal Remote</title>
+<style>
+  html, body { margin: 0; background: #111418; color: #e8e8e8; font: 15px system-ui, sans-serif; }
+  body { padding: 12px; max-width: 520px; margin: 0 auto; box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+  h2 { font-size: 13px; font-weight: 600; color: #9aa3ad; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  #status { padding: 8px 10px; border-radius: 6px; background: #3a2020; color: #ffb4a8; }
+  #status.ok { background: #1f3320; color: #b6e6b0; }
+  .pad { background: #1d232b; border: 1px solid #39424d; border-radius: 10px; touch-action: none; display: flex;
+         align-items: center; justify-content: center; color: #7d8792; text-align: center; font-size: 13px; }
+  #mirror { position: relative; margin: 0 auto; border: 1px solid #39424d; border-radius: 10px; overflow: hidden;
+            touch-action: none; background: #05070f; width: 100%; height: 56vw; }
+  #mirror canvas { display: block; position: absolute; inset: 0; }
+  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa3ad;
+             background: #05070f; font-size: 13px; }
+  #loading[hidden] { display: none; }
+  .hint { text-align: center; color: #7d8792; font-size: 12px; margin-top: 4px; }
+  #strip { height: 56px; }
+  .row { display: flex; gap: 6px; margin-top: 6px; }
+  .row button { flex: 1; }
+  button { background: #2b2b2b; color: #fff; border: 1px solid #555; padding: 10px 8px; border-radius: 6px; font: inherit;
+           -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  button:active { background: #3a3a3a; }
+  button.on { background: #e8b73a; color: #000; border-color: #e8b73a; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .grid button { padding: 10px 4px; font-size: 13px; }
+  .slider { display: flex; align-items: center; gap: 10px; }
+  .slider input { flex: 1; accent-color: #e8b73a; height: 28px; }
+  .slider span { width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="status">Looking for the animal screen...</div>
+
+<h2>Live view</h2>
+<div id="mirror"><div id="loading">Waiting for the screen...</div></div>
+<div class="hint">Drag the picture to turn the camera, pinch to zoom</div>
+<div class="row">
+  <button id="zoomOut">Zoom out</button>
+  <button id="zoomIn">Zoom in</button>
+  <button id="reset">Reset view</button>
+</div>
+
+<h2>Turn the animal</h2>
+<div id="strip" class="pad">Drag left or right</div>
+
+<h2>Animal</h2>
+<div id="animals" class="grid"></div>
+
+<h2>Animation speed</h2>
+<div class="slider">
+  <input id="speed" type="range" min="0.25" max="2" step="0.05" value="1">
+  <span id="speedVal">1.00x</span>
+</div>
+
+<h2>Animations</h2>
+<div id="clips" class="grid"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { ANIMALS, createView } from './js/animal-view.js';
+import { send, listen } from './js/remote-link.js';
+
+const statusEl = document.getElementById('status');
+const mirrorEl = document.getElementById('mirror');
+const loadingEl = document.getElementById('loading');
+const animalsEl = document.getElementById('animals');
+const clipsEl = document.getElementById('clips');
+const speed = document.getElementById('speed');
+const speedVal = document.getElementById('speedVal');
+
+// drags are added up and sent about 30 times a second, so the wifi is not flooded
+const acc = { orbitX: 0, orbitY: 0, zoom: 1, turn: 0 };
+setInterval(() => {
+  if (acc.orbitX || acc.orbitY) send({ type: 'cmd', cmd: 'orbit', dx: acc.orbitX, dy: acc.orbitY });
+  if (acc.zoom !== 1) send({ type: 'cmd', cmd: 'zoom', factor: acc.zoom });
+  if (acc.turn) send({ type: 'cmd', cmd: 'turn', dx: acc.turn });
+  acc.orbitX = acc.orbitY = acc.turn = 0; acc.zoom = 1;
+}, 33);
+
+// the live view is also the camera pad: one finger turns, two fingers pinch to zoom
+const pts = new Map();
+let pinch = 0;
+const spread = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+mirrorEl.addEventListener('pointerdown', e => {
+  mirrorEl.setPointerCapture(e.pointerId);
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pts.size === 2) pinch = spread();
+});
+mirrorEl.addEventListener('pointermove', e => {
+  const p = pts.get(e.pointerId);
+  if (!p) return;
+  if (pts.size === 1) {
+    const k = 2 * Math.PI / mirrorEl.clientWidth;   // a full picture width = one full turn
+    acc.orbitX += (e.clientX - p.x) * k;
+    acc.orbitY += (e.clientY - p.y) * k;
+  }
+  p.x = e.clientX; p.y = e.clientY;
+  if (pts.size === 2) { const s = spread(); if (pinch > 0 && s > 0) acc.zoom *= pinch / s; pinch = s; }
+});
+// a quick tap on the animal (not a drag) turns its head to the camera, here and on the screen
+let tap = null;
+mirrorEl.addEventListener('pointerdown', e => {
+  tap = pts.size === 1 ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
+});
+const lift = e => {
+  if (tap && pts.size === 1 && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 8 && performance.now() - tap.t < 400) {
+    const r = mirrorEl.getBoundingClientRect();
+    if (mirror.hit((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)) {
+      mirror.lookAtCamera();
+      send({ type: 'cmd', cmd: 'look' });
+    }
+  }
+  tap = null;
+  pts.delete(e.pointerId); pinch = 0;
+};
+mirrorEl.addEventListener('pointerup', lift);
+mirrorEl.addEventListener('pointercancel', lift);
+
+document.getElementById('zoomIn').onclick = () => send({ type: 'cmd', cmd: 'zoom', factor: 0.85 });
+document.getElementById('zoomOut').onclick = () => send({ type: 'cmd', cmd: 'zoom', factor: 1 / 0.85 });
+document.getElementById('reset').onclick = () => send({ type: 'cmd', cmd: 'reset' });
+
+// strip: drag sideways turns the animal itself
+const strip = document.getElementById('strip');
+let stripX = null;
+strip.addEventListener('pointerdown', e => { strip.setPointerCapture(e.pointerId); stripX = e.clientX; });
+strip.addEventListener('pointermove', e => {
+  if (stripX === null) return;
+  acc.turn += (e.clientX - stripX) * 2 * Math.PI / strip.clientWidth;
+  stripX = e.clientX;
+});
+strip.addEventListener('pointerup', () => { stripX = null; });
+strip.addEventListener('pointercancel', () => { stripX = null; });
+
+speed.oninput = () => {
+  speedVal.textContent = Number(speed.value).toFixed(2) + 'x';
+  send({ type: 'cmd', cmd: 'speed', value: Number(speed.value) });
+};
+
+ANIMALS.forEach(a => {
+  const b = document.createElement('button');
+  b.textContent = a.label;
+  b.dataset.id = a.id;
+  b.onclick = () => send({ type: 'cmd', cmd: 'animal', id: a.id });
+  animalsEl.appendChild(b);
+});
+
+// live view: same scene as the big screen, its camera follows the screen's camera
+const mirror = createView(mirrorEl, { maxPixelRatio: 1.5 });
+let aspect = 16 / 9, loadingId = null, goal = null;
+const look = new THREE.Vector3();
+function sizeMirror() {
+  const cs = getComputedStyle(document.body);
+  const w = document.body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const h = Math.min(w / aspect, innerHeight * 0.45);
+  mirrorEl.style.width = Math.round(h * aspect) + 'px';
+  mirrorEl.style.height = Math.round(h) + 'px';
+  mirror.resize();
+}
+addEventListener('resize', sizeMirror);
+sizeMirror();
+
+// the screen answers "hello" with what it shows; the live view loads the same animal
+let lastState = 0;
+function showState(s) {
+  lastState = Date.now();
+  statusEl.textContent = 'Connected to the animal screen';
+  statusEl.className = 'ok';
+  if (Math.abs(s.aspect - aspect) > 0.01) { aspect = s.aspect; sizeMirror(); }
+  [...animalsEl.children].forEach(b => b.classList.toggle('on', b.dataset.id === s.animal));
+  if (clipsEl.dataset.animal !== s.animal) {
+    clipsEl.dataset.animal = s.animal;
+    clipsEl.innerHTML = '';
+    s.clips.forEach(name => {
+      const b = document.createElement('button');
+      b.textContent = name;
+      b.onclick = () => send({ type: 'cmd', cmd: 'play', name });
+      clipsEl.appendChild(b);
+    });
+  }
+  [...clipsEl.children].forEach(b => b.classList.toggle('on', b.textContent === s.current));
+  if (document.activeElement !== speed) {
+    speed.value = s.speed;
+    speedVal.textContent = Number(s.speed).toFixed(2) + 'x';
+  }
+  mirror.setSpeed(s.speed);
+  if (s.animal !== mirror.animal && s.animal !== loadingId) {
+    loadingId = s.animal;
+    loadingEl.textContent = 'Loading ' + (ANIMALS.find(a => a.id === s.animal)?.label || s.animal) + '...';
+    loadingEl.hidden = false;
+    goal = null;
+    mirror.load(s.animal).then(ok => {
+      if (!ok) return;
+      loadingId = null;
+      loadingEl.hidden = true;
+      mirror.play(s.current);
+    });
+  } else if (s.animal === mirror.animal && s.current !== mirror.current) {
+    mirror.play(s.current);
+  }
+}
+
+// camera, turn and animation clock from the screen
+function followCam(m) {
+  if (m.animal !== mirror.animal) return;
+  goal = { p: new THREE.Vector3(...m.p), t: new THREE.Vector3(...m.t), turn: m.turn };
+  if (m.clip && m.clip !== mirror.current) mirror.play(m.clip);
+  if (mirror.action && Math.abs(mirror.action.time - m.time) > 0.25) mirror.action.time = m.time;
+}
+
+listen(m => {
+  if (m.type === 'state') showState(m);
+  else if (m.type === 'cam') followCam(m);
+  else if (m.type === 'look') mirror.lookAtCamera();   // someone tapped the animal on the big screen
+}, () => send({ type: 'hello' }));
+setInterval(() => {
+  send({ type: 'hello' });
+  if (Date.now() - lastState > 6000) {
+    statusEl.textContent = 'No animal screen found. Open elephant.html on the big screen.';
+    statusEl.className = '';
+  }
+}, 3000);
+
+const clock = new THREE.Clock();
+mirror.renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  if (goal) {
+    const k = 1 - Math.exp(-dt * 12);   // glide between the screen's 10-a-second updates
+    mirror.camera.position.lerp(goal.p, k);
+    look.lerp(goal.t, k);
+    mirror.camera.lookAt(look);
+    mirror.pivot.rotation.y += (goal.turn - mirror.pivot.rotation.y) * k;
+  } else {
+    look.copy(mirror.target);
+  }
+  mirror.render(dt);
+});
+</script>
+</body>
+</html>

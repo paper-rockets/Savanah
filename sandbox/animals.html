@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Savanna Animals Sandbox</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #cfd8b4; font: 14px system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; }
+  #bar { position: fixed; left: 0; right: 0; top: 0; background: #2b2b2b; padding: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+  #clips { position: fixed; left: 0; right: 0; bottom: 0; background: #2b2b2b; padding: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-height: 30%; overflow: auto; }
+  button { background: #444; color: #fff; border: 1px solid #666; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
+  button.on { background: #e8b73a; color: #000; border-color: #e8b73a; }
+  #info { position: fixed; right: 8px; top: 64px; color: #222; }
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="info"></div>
+<div id="clips"></div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const NAMES = ['giraffe_rigged','giraffe_motions','rhino_walk','rhino_rebuilt',
+  'elephant_african','elephant_b','lion_a','lion_b','lion_lowpoly','lion_baby','zebra'];
+const SIZE = 4;       // every animal is scaled to this longest side
+const GAP = 7;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xcfd8b4);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(0, 7, 24);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.5, 0);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a5a, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(10, 20, 12);
+sun.castShadow = true;
+sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 20; sun.shadow.camera.bottom = -20;
+sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 60), new THREE.MeshStandardMaterial({ color: 0xc9b26a }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const bar = document.getElementById('bar');
+const clipsEl = document.getElementById('clips');
+const info = document.getElementById('info');
+const animals = {};
+let current = null;
+
+function play(a, i) {
+  if (a.action) a.action.fadeOut(0.2);
+  a.action = a.mixer.clipAction(a.clips[i]).reset().fadeIn(0.2).play();
+  a.clipIndex = i;
+}
+
+function select(name) {
+  current = name;
+  [...bar.children].forEach(b => b.classList.toggle('on', b.dataset.n === name));
+  const a = animals[name];
+  controls.target.set(a.root.position.x, 1.5, 0);
+  camera.position.set(a.root.position.x, 5, 14);
+  clipsEl.innerHTML = '';
+  info.textContent = a.clips.length + ' clip(s)';
+  a.clips.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.textContent = c.name || ('clip ' + i);
+    b.className = i === a.clipIndex ? 'on' : '';
+    b.onclick = () => { play(a, i); [...clipsEl.children].forEach((x, j) => x.classList.toggle('on', j === i)); };
+    clipsEl.appendChild(b);
+  });
+}
+
+const loader = new GLTFLoader();
+NAMES.forEach((name, idx) => {
+  const b = document.createElement('button');
+  b.textContent = name; b.dataset.n = name; b.disabled = true;
+  b.onclick = () => select(name);
+  bar.appendChild(b);
+  loader.load('models/' + name + '.glb', gltf => {
+    const root = gltf.scene;
+    const box = new THREE.Box3().setFromObject(root);
+    const size = box.getSize(new THREE.Vector3());
+    const s = SIZE / Math.max(size.x, size.y, size.z);
+    root.scale.setScalar(s);
+    box.setFromObject(root);
+    const c = box.getCenter(new THREE.Vector3());
+    root.position.set((idx - (NAMES.length - 1) / 2) * GAP - c.x, -box.min.y, -c.z);
+    root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+    scene.add(root);
+    const mixer = new THREE.AnimationMixer(root);
+    const a = animals[name] = { root, mixer, clips: gltf.animations, action: null, clipIndex: 0 };
+    // start on a walk or idle clip if there is one
+    let start = gltf.animations.findIndex(c => /walk/i.test(c.name));
+    if (start < 0) start = gltf.animations.findIndex(c => /idle/i.test(c.name));
+    if (start < 0) start = 0;
+    if (gltf.animations.length) play(a, start);
+    b.disabled = false;
+  }, undefined, err => { b.textContent = name + ' (failed)'; console.error(name, err); });
+});
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  Object.values(animals).forEach(a => a.mixer.update(dt));
+  controls.update();
+  renderer.render(scene, camera);
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

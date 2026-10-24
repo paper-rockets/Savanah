@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animal Night Demo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070f; font: 12px system-ui, sans-serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; }
+  canvas { display: block; position: absolute; inset: 0; }
+  #clips { position: fixed; left: 8px; bottom: 8px; display: flex; gap: 4px; }
+  button { background: #2b2b2b; color: #fff; border: 1px solid #666; padding: 3px 8px; border-radius: 4px; cursor: pointer; font: inherit; }
+  button.on { background: #e8b73a; color: #000; border-color: #e8b73a; }
+  button[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="clips"></div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { ANIMALS, clipName, createView } from './js/animal-view.js';
+import { send, listen } from './js/remote-link.js';
+
+const clipsEl = document.getElementById('clips');
+const v = createView(document.getElementById('view'));
+const controls = new OrbitControls(v.camera, v.renderer.domElement);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.maxPolarAngle = Math.PI * 0.49;   // drag to turn, scroll/pinch to zoom, never below the ground
+
+function fit() {
+  v.frame();
+  controls.target.copy(v.target);
+  controls.minDistance = v.fitDistance * 0.4;
+  controls.maxDistance = v.fitDistance * 3;
+  controls.update();
+}
+function resize() { v.resize(); fit(); sendState(); }
+
+// the small buttons on this screen: a walk and a rest clip, when the animal has them; the phone remote has every clip
+function smallButton(label) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  clipsEl.appendChild(b);
+  return b;
+}
+const walkBtn = smallButton('walk'), restBtn = smallButton('rest');
+let walkName = null, restName = null;
+const findClip = patterns => {
+  for (const re of patterns) { const c = v.clips.find(c => re.test(clipName(c.name))); if (c) return clipName(c.name); }
+  return null;
+};
+function setButtons() {
+  walkName = findClip([/^walk$/i, /walk/i]);
+  restName = findClip([/^rest$/i, /lying|sleep|rest/i, /idle|stand/i]);
+  walkBtn.hidden = !walkName; restBtn.hidden = !restName;
+  markButtons();
+}
+function markButtons() {
+  walkBtn.classList.toggle('on', v.current === walkName);
+  restBtn.classList.toggle('on', v.current === restName);
+}
+function play(name) { v.play(name); markButtons(); sendState(); }
+walkBtn.onclick = () => play(walkName);
+restBtn.onclick = () => play(restName);
+
+// full screen button, hidden where the browser cannot do it (iPhone Safari)
+const page = document.documentElement;
+const goFull = page.requestFullscreen || page.webkitRequestFullscreen;
+const isFull = () => document.fullscreenElement || document.webkitFullscreenElement;
+const fullBtn = smallButton('Full screen');
+fullBtn.hidden = !goFull;
+fullBtn.onclick = () => isFull()
+  ? (document.exitFullscreen || document.webkitExitFullscreen).call(document)
+  : goFull.call(page)?.catch?.(() => {});
+const syncFull = () => { fullBtn.textContent = isFull() ? 'Exit full screen' : 'Full screen'; };
+document.addEventListener('fullscreenchange', syncFull);
+document.addEventListener('webkitfullscreenchange', syncFull);
+
+async function showAnimal(id) {
+  if (!(await v.load(id))) return;
+  setButtons();
+  fit();
+  sendState();
+}
+
+// phone remote (remote.html): its commands arrive through serve.py, and this page tells it what is on screen
+function sendState() {
+  if (v.mixer) send({ type: 'state', animal: v.animal, clips: v.clips.map(c => clipName(c.name)),
+    current: v.current, speed: v.speed, aspect: v.camera.aspect });
+}
+const sph = new THREE.Spherical();
+function orbit(dx, dy, factor) {   // same directions as dragging on this screen
+  const off = v.camera.position.clone().sub(controls.target);
+  sph.setFromVector3(off);
+  sph.theta -= dx;
+  sph.phi = THREE.MathUtils.clamp(sph.phi - dy, 0.05, controls.maxPolarAngle);
+  sph.radius = THREE.MathUtils.clamp(sph.radius * factor, controls.minDistance, controls.maxDistance);
+  v.camera.position.copy(controls.target).add(off.setFromSpherical(sph));
+}
+listen(m => {
+  if (m.type === 'hello') sendState();
+  if (m.type !== 'cmd' || !v.mixer) return;
+  if (m.cmd === 'orbit') orbit(m.dx, m.dy, 1);
+  else if (m.cmd === 'zoom') orbit(0, 0, m.factor);
+  else if (m.cmd === 'turn') v.pivot.rotation.y += m.dx;
+  else if (m.cmd === 'reset') { v.pivot.rotation.y = 0; fit(); }
+  else if (m.cmd === 'play') play(m.name);
+  else if (m.cmd === 'speed') { v.setSpeed(m.value); sendState(); }
+  else if (m.cmd === 'animal' && ANIMALS.some(a => a.id === m.id)) showAnimal(m.id);
+  else if (m.cmd === 'look') v.lookAtCamera();
+});
+
+// a quick tap on the animal (not a drag) turns its head to the camera; the remote's live view copies it
+const canvas = v.renderer.domElement;
+let down = null;
+canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+canvas.addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8 || performance.now() - down.t > 400) return;
+  const r = canvas.getBoundingClientRect();
+  if (v.hit((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)) {
+    v.lookAtCamera();
+    send({ type: 'look' });
+  }
+});
+
+// camera and pose for the remote's live mirror: ~10 times a second while anything moves,
+// and once a second anyway so its animation clock stays in step
+let lastCam = '', lastSent = 0, camTimer = 0;
+function sendCam(dt) {
+  camTimer += dt;
+  if (camTimer < 0.1 || !v.mixer) return;
+  camTimer = 0;
+  const r = x => Math.round(x * 1000) / 1000;
+  const p = v.camera.position.toArray().map(r), t = controls.target.toArray().map(r), turn = r(v.pivot.rotation.y);
+  const key = p.join() + t.join() + turn;
+  const now = performance.now();
+  if (key === lastCam && now - lastSent < 1000) return;
+  lastCam = key; lastSent = now;
+  send({ type: 'cam', animal: v.animal, p, t, turn, clip: v.current, time: v.action ? v.action.time : 0 });
+}
+
+const clock = new THREE.Clock();
+v.renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  controls.update();
+  v.render(dt);
+  sendCam(dt);
+});
+addEventListener('resize', resize);
+resize();
+showAnimal('elephant_b');
+</script>
+</body>
+</html>

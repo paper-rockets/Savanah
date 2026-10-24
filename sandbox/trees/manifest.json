@@ -1,0 +1,14 @@
+{ "trees": [
+  { "file": "acacia_umbrella.glb", "height": 11, "weight": 8, "max": 110, "radius": 520 },
+  { "file": "acacia_tiered.glb", "height": 12, "weight": 5, "max": 70, "radius": 520 },
+  { "file": "acacia_wide.glb", "height": 9, "weight": 4, "max": 60, "radius": 520 },
+  { "file": "acacia_young.glb", "height": 6, "weight": 5, "max": 90, "radius": 400 },
+  { "file": "baobab_bottle.glb", "height": 12, "weight": 3, "max": 40, "radius": 480 },
+  { "file": "baobab_column.glb", "height": 18, "weight": 2, "max": 35, "radius": 480 },
+  { "file": "baobab_squat.glb", "height": 9, "weight": 2, "max": 25, "radius": 420 },
+  { "file": "baobab_bare.glb", "height": 12, "weight": 2, "max": 25, "radius": 420 },
+  { "file": "baobab_giant.glb", "height": 16, "weight": 2, "max": 40, "radius": 500 },
+  { "file": "baobab_grey.glb", "height": 13, "weight": 2, "max": 30, "radius": 420 },
+  { "file": "candelabra.glb", "height": 7, "weight": 2, "max": 25, "radius": 320 },
+  { "file": "barbary_fig.glb", "height": 2.4, "weight": 3, "max": 35, "radius": 160, "sink": 0.1 }
+] }

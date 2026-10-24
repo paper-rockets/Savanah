@@ -1,2 +1,10 @@
-# Savanna Parallax 3D
-An endless side-scrolling savanna with painted scenery and rigged 3D animals (three.js). Open the page; Sunset, Sleep and Pause are the buttons at the bottom right.
+# Savanah
+
+Savanna projects, each in its own folder with its own GitHub page:
+
+- `parallax/`: Savanna Parallax 3D, https://paper-rockets.github.io/Savanah/parallax/
+- `sandbox/`: Savanna Animals Sandbox, https://paper-rockets.github.io/Savanah/sandbox/
+
+The menu page is https://paper-rockets.github.io/Savanah/
+
+Each project publishes only into its own folder. Do not push a project to the repo root.

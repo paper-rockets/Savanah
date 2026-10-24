@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Savanna Parallax 3D</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #a6dcf8; overflow: hidden; }
+    #scene { display: block; width: 100vw; height: 100vh; height: 100dvh; }
+    #loading { position: fixed; left: 16px; bottom: 16px; font: 14px system-ui, sans-serif; color: #1d4a6b; }
+    #pause, #sleep, #time { position: fixed; right: 16px; bottom: 16px; font: 600 15px system-ui, sans-serif; padding: 10px 18px; min-width: 88px;
+      background: #2b2b2b; color: #fff; border: 2px solid #111; border-radius: 6px; cursor: pointer; touch-action: manipulation; }
+    #sleep { right: 120px; }
+    #time { right: 224px; }
+    #pause.on, #sleep.on { background: #e8b73a; color: #000; border-color: #8a6a1a; }
+  </style>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="loading">Loading</div>
+  <button id="time" type="button">Sunset</button>
+  <button id="sleep" type="button">Sleep</button>
+  <button id="pause" type="button">Pause</button>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
