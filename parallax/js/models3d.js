@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneRigged } from 'three/addons/utils/SkeletonUtils.js';
 import { groundShadow } from './sprites.js';
+import { addRim } from './sunlight.js';
+import { THEME } from './theme.js';
 
 export const TILT = 0.2;   // tip the animal towards us a little, so we see some of its back (we look down on the plain)
 const TURN_TO_US = 0.35;   // and turn its head a little towards us, so it reads as round, not a flat profile
@@ -158,20 +160,22 @@ export async function loadModels(onProgress) {
   }));
 }
 
-// Soft light from the front left, so the bodies read as round without fighting the painted light.
+// Soft light from the front left, so the bodies read as round without fighting the painted light
+// (off at sunset: the sun behind the scene lights only the edges, sunlight.js).
 export function addLights(scene) {
   scene.add(new THREE.HemisphereLight('#fff6e0', '#9a7a44', 1.6));
-  const sun = new THREE.DirectionalLight('#fff0d0', 2.0);
+  const sun = new THREE.DirectionalLight('#fff0d0', THEME.sunlight.front);
   sun.position.set(-1, 2, 3);
   scene.add(sun);
 }
 
-// Last step of every animal shader: fade towards hazeColor by haze, same as the cut-out cards.
+// Last step of every animal shader: fade towards hazeColor by haze, same as the cut-out cards; then the sun's edge light.
 const HAZE = '#include <dithering_fragment>\n  gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor, haze);';
 const addHaze = (shader, uniforms) => {
   shader.uniforms.haze = uniforms.haze;
   shader.uniforms.hazeColor = uniforms.hazeColor;
   shader.fragmentShader = 'uniform float haze;\nuniform vec3 hazeColor;\n' + shader.fragmentShader.replace('#include <dithering_fragment>', HAZE);
+  addRim(shader);
 };
 
 // Cartoon colours from the model's photo picture: read a smoothed copy (soften), flatten the lightness into

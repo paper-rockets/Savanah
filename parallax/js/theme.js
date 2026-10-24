@@ -11,6 +11,12 @@ const DAY = {
   ground: { far: '#ecd54c', mid: '#ffd640', near: '#f2aa18', front: '#5c6222', paint: 0.35 },
   sunSize: 112,
   sky: {},   // sky pieces keep their painted colours
+  // light from the sun on the 3D animals and trees (sunlight.js): front = the front light's strength (models3d.js addLights),
+  // rim = the edge facing the sun: colour, strength, edge (higher = thinner), haze (how fast it fades with distance)
+  sunlight: { front: 2.0, rim: { color: '#fff0c8', strength: 0.3, edge: 0.45, haze: 2 } },
+  // sun rays (godrays.js): strength, tint (+ how much of it), length = share of the way to the sun the rays reach back,
+  // decay = fade along a ray, reach = how far from the sun they show (screen heights), source = how far round the sun the sky gives light
+  rays: { strength: 0.45, tint: '#fff2cc', tintMix: 0.3, length: 0.95, decay: 0.97, reach: 1.3, source: 330 },
 };
 
 const SUNSET = {
@@ -29,6 +35,9 @@ const SUNSET = {
   },
   // everything standing on the ground turns almost to a silhouette: dark red-brown close, redder far off
   standing: { amount: 0.86, near: '#3c0f08', far: '#9a2c18', farD: 120 },
+  // full back light: no front light, a wide gold edge on every body, near and far
+  sunlight: { front: 0, rim: { color: '#ffa73a', strength: 1.0, edge: 0.05, haze: 0 } },
+  rays: { strength: 0.9, tint: '#ffc24a', tintMix: 0.45, length: 0.95, decay: 0.975, reach: 1.6, source: 420 },
 };
 
 export const THEME = TIME === 'sunset' ? SUNSET : DAY;

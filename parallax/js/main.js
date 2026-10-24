@@ -5,6 +5,8 @@ import { MODELS, KINDS, HERDS, STAND_HERDS, MIXES, loadModels, addLights, makeAn
 import { TREE_MODELS, loadTrees, makeTree, turnTrees, treePaintingHeight } from './trees3d.js';
 import { makeSleep } from './sleep.js';
 import { makeNight } from './night.js';
+import { makeGodRays } from './godrays.js';
+import { setSunPos, setSunUp } from './sunlight.js';
 import { loadPieces, makeCard, piece, addShadow, warmUp } from './sprites.js';
 import { Lane, makeRng } from './lanes.js';
 import { makeBackdrop } from './backdrop.js';
@@ -35,6 +37,7 @@ const camera = new THREE.OrthographicCamera(-640, 640, VIEW_H / 2, -VIEW_H / 2, 
 const view = { left: -640, right: 640 };
 
 let backdrop = null;   // sky + painted ground, made once the grass picture has loaded
+let rays = null;       // sun rays drawn over the finished picture (godrays.js)
 
 const hazeColor = new THREE.Color(SKY_LOW);
 const FRONT_GREEN = new THREE.Color('#4f5a1c');   // dark grass along the bottom edge, from the target picture
@@ -374,6 +377,7 @@ function resize() {
   camera.updateProjectionMatrix();
   view.left = -halfW; view.right = halfW;
   backdrop.fit(view);
+  rays.fit(view);
 }
 
 // Nothing but reeds may stand in a waterhole: anything whose base slides into one fades out.
@@ -424,6 +428,12 @@ async function start() {
     groundPaint: THEME.ground.paint, groundOrder: LAYER.ground,
   });
   const sun = addSun();
+  const sunY = SUN.base + SUN.size / 2;
+  setSunPos(SUN.x, sunY);
+  rays = makeGodRays(renderer, {
+    rays: THEME.rays, viewHeight: VIEW_H, horizon: HORIZON, skyTop: THEME.skyTop, skyLow: SKY_LOW,
+    glow: THEME.glow, glowStrength: THEME.glowStrength, glowRadius: THEME.glowRadius, sunX: SUN.x, sunY, sunSize: SUN.size,
+  });
   warmUp(renderer);
   loading.remove();
   resize();
@@ -451,7 +461,7 @@ async function start() {
   // Sleep button: night falls, everything stands still and elephants lie down to sleep right at the front (sleep.js, night.js)
   const sleep = makeSleep(scene, view, look);
   const night = makeNight(scene, view, sun, VIEW_H);
-  Object.assign(window.__savanna, { scene, sleep, night });   // for checking in the browser
+  Object.assign(window.__savanna, { scene, sleep, night, rays });   // for checking in the browser
   const sleepButton = document.getElementById('sleep');
   sleepButton.addEventListener('click', () => {
     const on = sleep.toggle();
@@ -475,7 +485,10 @@ async function start() {
   for (let t = 0; t < FAST_FORWARD; t += 1 / 30) step(1 / 30);
   renderer.setAnimationLoop(() => {
     step(Math.min(clock.getDelta(), 0.1));   // a long pause never makes things jump
-    renderer.render(scene, camera);
+    const up = 1 - night.k;   // the sun's light and rays fade out as night falls
+    setSunUp(up);
+    rays.setSunUp(up);
+    rays.render(scene, camera, clock.elapsedTime);
   });
 }
 

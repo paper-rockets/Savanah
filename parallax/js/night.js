@@ -132,6 +132,7 @@ export function makeNight(scene, view, sun, viewH) {
 
   let target = 0;
   return {
+    get k() { return k.value; },   // 0 = day, 1 = night
     set(on) { target = on ? 1 : 0; },
     update(dt) {
       time.value += dt;
