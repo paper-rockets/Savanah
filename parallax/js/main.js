@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { CATALOG, BIRD, allPieceNames } from './catalog.js';
 import { MODELS, KINDS, HERDS, STAND_HERDS, MIXES, loadModels, addLights, makeAnimal, settle } from './models3d.js';
-import { TREE_MODELS, loadTrees, makeTree, turnTrees } from './trees3d.js';
+import { TREE_MODELS, loadTrees, makeTree, turnTrees, treePaintingHeight } from './trees3d.js';
 import { makeSleep } from './sleep.js';
 import { makeNight } from './night.js';
 import { loadPieces, makeCard, piece, addShadow, warmUp } from './sprites.js';
@@ -58,8 +58,9 @@ function skyLook(key, haze) {
 // tint = how much to shade it towards FRONT_GREEN instead of the sky (the grass at our feet).
 function stand(lane, name, x, y, metres, shadow, tint = 0) {
   let h = lane.rng.range(metres[0], metres[1]) * unitsPerMetre(y);
-  h = Math.min(h, piece(name).tex.image.height * MAX_STRETCH);   // small pictures stay sharp
-  if (TREE_MODELS[name] && !TREES.includes('flat')) {   // this painting has a 3D model: stand that instead
+  const as3D = TREE_MODELS[name] && !TREES.includes('flat');   // this painting has a 3D model: stand that instead
+  h = Math.min(h, (as3D ? treePaintingHeight(name) : piece(name).tex.image.height) * MAX_STRETCH);   // small pictures stay sharp
+  if (as3D) {
     const tree = makeTree(name, h, ...look(y, tint), shadowSquash(y), shadow);
     lane.place(tree, x + tree.userData.halfWidth, y, standingOrder(y));
     settle(tree, depthOf(y));
@@ -400,12 +401,16 @@ const loading = document.getElementById('loading');
 const clock = new THREE.Clock();
 
 async function start() {
-  const names = allPieceNames();
+  // 3D trees come with their painting inside the model, so the flat painting is only fetched for ?trees=...flat
+  const names = allPieceNames().filter((n) => !TREE_MODELS[n] || TREES.includes('flat'));
+  // one count for every download (pictures, animals, trees), so it keeps moving while the big models arrive
+  let done = 0, total = names.length + Object.keys(MODELS).length + Object.keys(TREE_MODELS).length + 1;
+  const tick = () => { loading.textContent = `Loading ${++done} / ${total}`; };
   const [grass] = await Promise.all([
-    new THREE.TextureLoader().loadAsync('art/ground/35_ground_strip.png'),
-    loadPieces(names, (n, total) => { loading.textContent = `Loading ${n} / ${total}`; }),
-    loadModels(),
-    loadTrees(),
+    new THREE.TextureLoader().loadAsync('art/ground/35_ground_strip.png').then((t) => { tick(); return t; }),
+    loadPieces(names, tick),
+    loadModels(tick),
+    loadTrees(tick),
   ]);
   addLights(scene);
   grass.wrapS = THREE.RepeatWrapping;           // the strip repeats left to right with no seam

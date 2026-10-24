@@ -62,7 +62,7 @@ const AS_PAINTED = new THREE.Color(0.94, 1.01, 1.19);
 
 const protos = {};   // painting -> { scene, cx, cz, minY, w, h }
 
-export async function loadTrees() {
+export async function loadTrees(onProgress) {
   const loader = new GLTFLoader();
   await Promise.all(Object.entries(TREE_MODELS).map(async ([name, file]) => {
     const gltf = await loader.loadAsync(`models/trees/${file}.glb`);
@@ -88,8 +88,14 @@ export async function loadTrees() {
     tilt.remove(gltf.scene);
     const c = box.getCenter(new THREE.Vector3());
     protos[name] = { scene: gltf.scene, cx: c.x, cz: c.z, minY: box.min.y, w: front.x, h: front.y, footX: (foot0 + foot1) / 2 - c.x, footW: foot1 - foot0 };
+    onProgress?.();
   }));
 }
+
+// The painting's height in pixels, read from the model (tools/build_trees.py makes 100 picture pixels = 1 model unit),
+// so the game does not have to download the flat painting just to measure it.
+// (the model is about 6.5 pixels shorter than its painting: the outline is pulled in half a grid cell; measured on 5 trees)
+export const treePaintingHeight = (name) => protos[name].h * 100 + 6.5;
 
 // One tree standing on its base line at (0, 0). height = on screen (the painting's height, as for the flat card);
 // squash = shadow height / width; shadow = shadow width as a share of the painting's width.

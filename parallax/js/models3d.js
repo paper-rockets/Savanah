@@ -130,12 +130,27 @@ function measure(gltf, def) {
   return { cx: c.x, cz: c.z, minY: box.min.y, w: size.x, h: size.y };
 }
 
+// The published site (tools/publish.py) holds the animals as .glb.gz, about 40% smaller to download over a phone's
+// mobile data (the host does not compress model files itself). Here the plain .glb is used when there is no .gz.
+async function loadGlb(loader, url) {
+  if ('DecompressionStream' in window) {
+    try {
+      const res = await fetch(`${url}.gz`);
+      if (res.ok) {
+        const bytes = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+        return await loader.parseAsync(bytes, url.slice(0, url.lastIndexOf('/') + 1));
+      }
+    } catch (err) { /* not compressed, or not understood: fall back to the plain file */ }
+  }
+  return loader.loadAsync(url);
+}
+
 export async function loadModels(onProgress) {
   const loader = new GLTFLoader();
   const keys = Object.keys(MODELS);
   let done = 0;
   await Promise.all(keys.map(async (key) => {
-    const gltf = await loader.loadAsync(`models/${MODELS[key].file}.glb`);
+    const gltf = await loadGlb(loader, `models/${MODELS[key].file}.glb`);
     gltf.scene.traverse((o) => { if (o.isMesh) [o.material].flat().forEach(rawColours); });
     if (MODELS[key].cut) cutClips(gltf, MODELS[key].cut);
     protos[key] = { gltf, ...measure(gltf, MODELS[key]) };
